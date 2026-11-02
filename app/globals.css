@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brand: Cream #F2E6B3 + Dark Brown #4B2E21. Surfaces are lighter creams, borders darker creams. */
+:root {
+  --cream: #f2e6b3;
+  --surface: #f9f4dd;
+  --line: #d4c599;
+  --brown: #4b2e21;
+  --brown-dark: #3a2218;
+  --ok: #3f6b35;
+  --warn: #8a5a00;
+  --bad: #9b2c2c;
+}
+
+@layer base {
+  html { color-scheme: light; scroll-behavior: smooth; }
+  body { @apply min-h-screen bg-cream font-sans text-brown antialiased; overflow-x: clip; }
+  h1, h2, h3 { @apply font-serif tracking-tight; }
+  :focus-visible { outline: 2px solid var(--brown); outline-offset: 2px; border-radius: 6px; }
+  ::selection { background: rgba(75, 46, 33, .85); color: var(--cream); }
+}
+
+@layer components {
+  /* buttons */
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-lg bg-brown px-4 py-2 text-sm font-semibold text-cream shadow-sm transition duration-150 hover:-translate-y-px hover:bg-brown-dark hover:shadow-md active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-sm; }
+  .btn-secondary { @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-brown/40 bg-transparent px-4 py-2 text-sm font-medium text-brown transition duration-150 hover:border-brown hover:bg-brown/10 active:bg-brown/15 disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-danger { @apply inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#8f2d1f] px-4 py-2 text-sm font-semibold text-white shadow-sm transition duration-150 hover:-translate-y-px hover:bg-[#762418] hover:shadow-md active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-sm { @apply !px-3 !py-1 text-xs; }
+  /* forms */
+  .input { @apply w-full rounded-lg border border-[#cdbb82] bg-[#fcf9ec] px-3 py-2 text-sm text-brown placeholder-gray-400 transition duration-150 hover:border-brown/50 focus:border-brown focus:outline-none focus:ring-2 focus:ring-brown/20; }
+  .input.input-error { border-color: #b3402f; }
+  .input.input-error:focus { box-shadow: 0 0 0 2px rgba(179, 64, 47, .25); }
+  .label { @apply mb-1 block text-sm font-semibold text-brown; }
+  .hint { @apply mt-1 text-xs text-gray-500; }
+  /* surfaces */
+  .card { @apply rounded-2xl border border-[#d4c599] bg-[#f9f4dd] p-5 shadow-card transition duration-200; }
+  a.card:hover, button.card:hover { @apply -translate-y-0.5 border-brown/50 shadow-lift; }
+  .section-title { @apply mb-3 mt-8 flex items-center gap-2 text-xl font-bold; }
+  /* tables */
+  .th { @apply whitespace-nowrap px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600; }
+  .td { @apply px-4 py-3 text-sm text-brown; }
+  .link { @apply font-medium text-brown underline decoration-brown/30 underline-offset-2 transition hover:decoration-brown; }
+}
+
+select.input option { color: #4b2e21; background-color: #fcf9ec; }
+input.input:disabled, select.input:disabled, textarea.input:disabled { @apply cursor-not-allowed bg-gray-100 text-gray-500; }
+input[type="checkbox"] { accent-color: #4b2e21; width: 1rem; height: 1rem; }
+input[type="file"] { @apply text-sm text-gray-600; }
+input[type="file"]::file-selector-button { @apply mr-3 cursor-pointer rounded-lg border border-brown/40 bg-transparent px-3 py-1.5 text-sm font-medium text-brown transition hover:bg-brown/10; }
+table { @apply w-full border-collapse; }
+thead { @apply bg-[#eadfa8]; }
+tbody tr { @apply border-t border-[#d4c599] transition-colors hover:bg-brown/5; }
+.card table { @apply overflow-hidden rounded-lg; }
+hr { border-color: var(--line); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #cdbb82; border-radius: 8px; }
+
+/* subtle page transition */
+main > * { animation: fade-up .3s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
