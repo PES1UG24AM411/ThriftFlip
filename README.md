@@ -24,7 +24,7 @@ enforces integrity and implements the important business rules.
 ## 3. Scope
 **In scope:** student/admin accounts, listings (fixed price and auction), full-text and semantic search, bidding with anti-sniping,
 suspicious-bidding detection, purchase state machine, direct and multi-way swaps, waitlist with claim windows, fair-price
-estimation, demand analytics, recommendations, wishlist, price alerts, notifications, chat, ratings/reviews/reputation, reports and moderation, admin dashboard.
+estimation, demand analytics, recommendations, wishlist, price alerts, notifications, chat, ratings/reviews, reports and moderation, admin dashboard.
 **Out of scope:** real payments (the "payment held" state is a record, not money movement), e-mail/SMS delivery, image upload, PESU SSO.
 
 ## 4. Functional requirements
@@ -41,7 +41,7 @@ estimation, demand analytics, recommendations, wishlist, price alerts, notificat
 | Prices | Fair price (30/25/25/20 weighting), historical min/avg/max, comparison with current listings, price alerts |
 | Demand | HIGH / MEDIUM / LOW from wishlist, searches, bids, swap requests and supply, per book and per course |
 | Search | PostgreSQL full-text search, semantic (vector) search, similar listings, recommendations |
-| Social | Notifications, buyer-seller chat, ratings, reviews, reputation, reports and moderation |
+| Social | Notifications, buyer-seller chat, ratings, reviews, reports and moderation |
 
 ## 5. Non-functional requirements
 Integrity at the database level (CHECK/UNIQUE/FK/triggers); security (bcrypt, signed httpOnly cookie, parameterized SQL, Zod, role checks);
@@ -114,15 +114,17 @@ Names differ from the brief in two places: `transactions` (TRANSACTION is an SQL
 | `013_offer_dedupe.sql` | one pending offer per buyer and listing (unique index) |
 | `014_fixes.sql` | integer counts in `v_student_reputation` (the driver returned bigint as strings), `propose_swap` ownership order and missing-payer check, trigger that closes pending swap proposals when a book stops being available, recommendation reason labels |
 | `015_book_cover_url.sql` | `book.cover_url` (link only, `IF NOT EXISTS`) and `v_listing_details.cover_url`; pages show uploaded photo, then cover link, then placeholder |
+| `016_admin_reports_ratings_wanted.sql` | wanted books for swap listings, `v_student_ratings` (reputation score removed), review hiding, report workflow Pending → Under review → Resolved / Dismissed, `admin_action` log, `admin_message`, admin functions (`resolve_report` is dropped) |
+| `017_wanted_books_and_cycle_swaps.sql` | wanted books shown from both `listing_wanted_book` and `swap_preference`; circular swaps (3+ students) need every participant to accept and then confirm (`confirm_swap_cycle`, `cancel_swap_cycle`); conflicting swaps are blocked |
 
-Existing databases: run `npm run db:migrate`. It only adds files 010 to 015 and keeps your data. Applied files (001 to 009) were not edited. If it reports a checksum mismatch, do NOT run `db:reset`: back up with `pg_dump`, restore the original text of the named file, and migrate again.
+Existing databases: run `npm run db:migrate`. It only adds the migration files that have not been applied yet (the newest is 021) and keeps your data. Applied files must never be edited. If it reports a checksum mismatch, do NOT run `db:reset`: back up with `pg_dump`, restore the original text of the named file, and migrate again.
 
 ## 12. Advanced database concepts (and where they are used)
 | Concept | Implementation | Used by |
 |---|---|---|
 | **Transactions** | every SQL function runs atomically; `withTransaction` in the API | place bid, purchase, swaps, create listing + auction |
 | **Row locking** | `SELECT ... FOR UPDATE` on the auction / listing / swap rows, `FOR UPDATE SKIP LOCKED` on the waitlist | concurrent bids, two buyers, claim windows |
-| **Views** | `v_bid_risk`, `v_book_demand`, `v_course_demand`, `v_student_reputation`, `v_listing_details`, `v_auction_status`, `v_price_history`, `v_waitlist_queue`, `v_admin_overview` | admin dashboard, listing pages, analytics |
+| **Views** | `v_bid_risk`, `v_book_demand`, `v_course_demand`, `v_student_ratings`, `v_listing_details`, `v_auction_status`, `v_price_history`, `v_waitlist_queue`, `v_admin_overview` | admin dashboard, listing pages, analytics |
 | **Stored functions** | see migration 005 | API calls them with parameterized `SELECT fn($1,...)` |
 | **Triggers** | `validate_bid`, `tx_validate_transition`, `tx_after_change`, `listing_before_write`, `listing_price_alerts`, `validate_rating`, ... | rules hold even for direct SQL |
 | **Indexes** | partial unique (one active transaction per listing, no equal valid bids), composite, GIN, HNSW | speed and integrity |
@@ -153,8 +155,8 @@ The API decides *who* may ask (buyer: PAYMENT_HELD, CONFIRMED; seller: HANDED_OF
 Accepting alone never completes a swap. The settlement amount is only an agreement: THRIFTFLIP does not process payments. Completed swaps show up in both students' `/transactions`, count as one completed transaction each, and can be rated.
 **Multi-way swaps (3 to 6 students)** are unchanged: preferences → `find_swap_cycles()` (recursive CTE) → `propose_swap_cycle()` → `respond_swap_request()`. They go through the normal transaction states and a cycle counts once for reputation only when every transaction of it is released. Known limitation: cancelling one transaction of a cycle does not cancel the others.
 
-### Reputation
-See `docs/REPUTATION.md`. New accounts are exactly 0; only finished deals (state RELEASED) and the ratings for them count; `v_student_reputation` exposes `reputation_score`, `completed_transactions` and `rating_count` separately.
+### Ratings and reviews (there is no reputation score)
+A student is shown by their **average star rating (1 to 5), number of ratings and written reviews**, or "Not rated yet". Only finished deals (state RELEASED) can be rated, once per person per deal; `v_student_ratings` exposes `avg_rating`, `rating_count`, `completed_sales`, `completed_swaps`. An admin can hide a review's text (the stars still count); the author is told why.
 
 ### Waitlist
 Only reserved fixed-price listings can be waited for. When the deal is cancelled the first waiting student (FIFO by `joined_at`, then id) is notified and gets a 30-minute claim window; the listing is held for them.
@@ -215,12 +217,13 @@ Embeddings are generated by `npm run embeddings:generate` (batch) and after each
 | Prices / demand | `GET price-intelligence`, `GET/POST/DELETE price-alerts`, `GET demand` |
 | Social | `GET/POST notifications`, `GET/POST conversations`, `GET/POST conversations/[id]`, `POST ratings`, `GET/PUT profile`, `POST/DELETE profile/photo`, `GET profile/[id]`, `POST reports` |
 | Health | `GET health` (development only: shows what is set up and what is missing) |
-| Admin | `GET admin/overview`, `GET admin/suspicious`, `GET admin/reports`, `POST admin/reports/[id]`, `POST admin/close-auctions` |
+| Admin | `GET admin/overview`, `GET admin/suspicious`, `GET admin/reports`, `GET/POST admin/reports/[id]` (status with reason), `POST admin/actions` (warn, suspend, reactivate, remove/restore listing, hide/restore review), `POST admin/messages`, `GET admin/users`, `GET admin/listings`, `GET admin/reviews`, `POST admin/close-auctions` |
+| Notices | `GET/POST notices` (a student reads and answers admin messages) |
 
 Every handler: authenticates (`requireStudent` / `requireAdmin`), validates input with Zod, uses parameterized SQL, and maps PostgreSQL errors (`23514` → 400, `23505` → 409, `P0002` → 404) to clean JSON errors.
 
 ## 16. Pages
-`/` landing · `/login` · `/register` · `/forgot-password` · `/reset-password` · `/dashboard` · `/marketplace` (browse, full-text, semantic) · `/listings/new` · `/listings/[id]` · `/listings/[id]/edit` · `/auctions` · `/auctions/[id]` (live bidding) · `/wishlist` · `/swaps` (direct proposals, matches, preferences) · `/waitlist` · `/transactions` · `/transactions/[id]` · `/notifications` · `/messages` · `/profile` · `/profile/[id]` (reputation) · `/recently-viewed` · `/recommendations` · `/price-intelligence` · `/admin` · `/admin/reports` · `/admin/analytics`.
+`/` landing · `/login` · `/register` · `/forgot-password` · `/reset-password` · `/dashboard` · `/marketplace` (browse, full-text, semantic) · `/listings/new` · `/listings/[id]` · `/listings/[id]/edit` · `/auctions` · `/auctions/[id]` (live bidding) · `/wishlist` · `/swaps` (direct proposals, matches, preferences) · `/waitlist` · `/transactions` · `/transactions/[id]` · `/notifications` · `/messages` · `/profile` · `/profile/[id]` (ratings and reviews) · `/recently-viewed` · `/recommendations` · `/price-intelligence` · `/notices` (messages from admins) · `/admin` · `/admin/reports` · `/admin/users` · `/admin/listings` (listings and reviews) · `/admin/analytics`.
 
 ## 17. Authentication and authorization
 **Registration form:** SRN (placeholder `PES1UG24AM411`), name, **e-mail**, course (fixed **B.Tech**, `CHECK program = 'B.Tech'`), **campus**, then **department** (the list stays disabled with "Select campus first..." until a campus is chosen, then shows that campus's six departments: CSE, CSE (AI & ML), Biotechnology, ECE, EEE, Mechanical), semester 1 to 8 and an **independent THRIFTFLIP password**. The student's campus is stored from the chosen department by a trigger. **PESU Academy passwords are never requested or stored.**
@@ -265,12 +268,16 @@ Open **http://localhost:3000**.
 A newly registered account can use the marketplace immediately (no verification link).
 Demo logins (local only): `aarav.sharma@thriftflip.test` / `Demo@12345` (any seeded student: `<firstname>.<lastname>@thriftflip.test`), admin `admin@thriftflip.test` / `Admin@12345`.
 
+**Database role-based access control (RBAC):** see [`DB_RBAC_SETUP.md`](DB_RBAC_SETUP.md). Migration `022_database_rbac.sql` adds separate non-superuser student/admin/auth roles and row-level policies for student-owned records. Keep `DATABASE_URL` for migrations; after completing the setup guide, use `APP_DATABASE_URL` for the Next.js app.
+
+**Creating an admin** (the only way; students can never become admins): `npm run admin:create -- "Full Name" admin@example.com "a-strong-password"`. Running it again for the same e-mail resets that admin's name and password. Admins have only a name, e-mail and password, and all admins have the same full permissions.
+
 | Task | Command |
 |---|---|
 | Stop the database | `docker compose down` |
-| Stop and delete all data | `docker compose down -v` (then `up -d` and migrate again) |
-| Re-create tables only | `npm run db:reset` (**deletes all data**), then `npm run db:seed` |
-| Re-seed | `npm run db:seed -- --force` (wipes data first; without `--force` a second run does nothing, so no duplicates) |
+| Stop and delete all data | Destructive: removes the database volume. Do not use on a database containing data you want to keep. |
+| Re-create tables only | `npm run db:reset -- --confirm=<database name>` (**deletes all data**; refuses to run without `--confirm`), then `npm run db:seed` |
+| Re-seed | `npm run db:seed -- --force --confirm=<database name>` (wipes data first; without `--force` a second run does nothing, so no duplicates, and the seed refuses to run on a database that already holds students or listings) |
 | Check the set-up | `npm run doctor` (finds missing env values, database not running, outdated tables, missing departments or college domain) and http://localhost:3000/api/health |
 | Tests | `npm test` (uses `TEST_DATABASE_URL`) |
 | Model test too | `RUN_MODEL_TESTS=1 npm test` |
@@ -326,7 +333,7 @@ thriftflip/
 **VERIFIED (executed in the last rounds, PostgreSQL 16 without pgvector, a stand-in `vector` type was used only for this check):**
 - Migrations 001-006 and 008-013 apply cleanly in order on an empty database.
 - Direct swap workflow in SQL: self-swap, unowned book, non-swappable listing, duplicate, unavailable listing, wrong actor, accept before/after, listings RESERVED then SWAPPED, one confirmation is not enough, repeated and concurrent confirmations create exactly ONE transaction, a completed proposal cannot be cancelled, two overlapping proposals cannot both be accepted (second is cancelled under the row lock).
-- Reputation: new accounts 0; finished swap gives 5 each; rating 5 gives 15; self-rating, outsider rating and duplicate rating are refused.
+- Ratings: a new student is "Not rated yet"; only finished deals can be rated; self-rating, outsider rating and duplicate rating are refused.
 - Marketplace filter SQL (generated by `lib/listingFilters.ts`): partial title / author / ISBN (also with hyphens), type sale / auction / swap, availability, price range, condition, semester, department, course code, campus, pagination, invalid input rejected.
 - `recommend_listings`: returns department/semester matches, falls back to recent listings, excludes own and unavailable listings.
 - Migration 014 on both a fresh database (001-014 in order) and a database already migrated to 013; the SQL scenarios behind the 11 formerly failing tests (integer counts, `WARNED` moderation action, swap ownership and payer checks, stale-proposal closing, recommendation reasons).
@@ -334,14 +341,14 @@ thriftflip/
 
 **NOT VERIFIED (npm registry unreachable in that environment):**
 - `npm install`, `npm test` (Vitest), `npm run typecheck` with real type packages, `npm run lint`, `npm run build`, `npm run dev`.
-- The new and changed Vitest files (`swapProposals`, `reputation`, `recommendations`, `marketplaceFilters`, `emailPolicy`, `auth`, `student`, `email`) were written against the SQL above but have not been run.
+- The new and changed Vitest files (`swapProposals`, `ratings`, `recommendations`, `marketplaceFilters`, `emailPolicy`, `auth`, `student`, `email`) were written against the SQL above but have not been run.
 - pgvector (`007`, vector similarity bonus), `db:seed`, `embeddings:generate`, and every browser behaviour.
 
 ## 25. Warnings (read first)
 1. **Nothing has been run.** Expect small errors (a typo in SQL, a type error). Run in this order and fix the first error before continuing: `npm install` → `docker compose up -d` → `npm run db:migrate` → `npm run db:seed` → `npm run doctor` → `npm run typecheck` → `npm test` → `npm run build`. Paste an error into Cursor/Claude and it can be fixed quickly.
 2. `next.config.mjs` sets `typescript.ignoreBuildErrors: true` so a stray type error does not block the first build. Run `npm run typecheck`, fix what it prints, then set it to `false`.
 3. **Two env files:** `docker compose` reads `.env`; Next.js and the scripts read `.env.local`. Fill both (copy the same file). Docker refuses to start without `POSTGRES_PASSWORD`.
-4. **`npm test` deletes all data** in `TEST_DATABASE_URL` (default database `thriftflip_test`). Never point it at your real database; `npm run db:reset` and `db:seed -- --force` also delete data.
+4. **`npm test` deletes all data** in `TEST_DATABASE_URL` (default database `thriftflip_test`). Never point it at your real database; `npm run db:reset` and `db:seed -- --force` also delete data (both now refuse to run unless you repeat the database name with `--confirm=<name>`). Never run them against a database you want to keep.
 5. **Demo passwords** (`Demo@12345`, `Admin@12345`) are for local use only. Change them with `SEED_DEMO_PASSWORD` / `SEED_ADMIN_PASSWORD` or do not seed in any shared environment.
 6. **First embedding run downloads about 90 MB** from Hugging Face (needs internet). Until embeddings exist, semantic search and "similar listings" return nothing and recommendations fall back to course matches.
 7. `onnxruntime-node` (used for embeddings) is a native package; if `npm install` fails on your machine use Node 20 LTS and install your OS build tools. Password hashing uses pure-JavaScript `bcryptjs`, so it needs no compiling.
@@ -349,7 +356,7 @@ thriftflip/
 9. Docker image `pgvector/pgvector:pg16` is required (plain `postgres` has no `vector` extension). `AVG(vector)` needs pgvector 0.5 or newer (included).
 10. Seeded auction `LIVE` times are relative to the moment you seed: re-seed with `--force` before a demo so the 1-hour auction is still open.
 11. Payments are simulated; ISBNs in the seed data are illustrative; do not enter your PESU Academy password anywhere.
-12. If you ran an earlier version of this project, `npm run db:migrate` will refuse to continue ("older version of the SQL files"). Run `npm run db:reset` then `npm run db:seed`.
+12. If you ran an earlier version of this project, `npm run db:migrate` will refuse to continue ("older version of the SQL files"). Back it up with `pg_dump` first. Only if it holds demo data and nothing else, rebuild it with `npm run db:reset -- --confirm=<database name>` then `npm run db:seed`.
 13. Known limitation: if one transaction of a multi-way swap is cancelled, the other transactions of that swap are not cancelled automatically.
 
 ## 26. Registration and e-mail (no verification)
@@ -361,10 +368,10 @@ thriftflip/
 ## 27. Troubleshooting
 | Symptom | Cause and fix |
 |---|---|
-| Register page shows "Internal server error" and the Department list is empty | The database is not running, not migrated, or built from older SQL. Run `npm run doctor`; the page now also prints the exact reason. Usual fix: `docker compose up -d`, `npm run db:reset`, `npm run db:seed`, then restart `npm run dev`. |
+| Register page shows "Internal server error" and the Department list is empty | The database is not running, not migrated, or built from older SQL. Run `npm run doctor`; the page now also prints the exact reason. Usual fix: `docker compose up -d`, then `npm run db:migrate` (keeps your data), then restart `npm run dev`. Use `npm run db:reset` only on a throw-away demo database. |
 | "DATABASE_URL is not set" | Create `.env.local` (`cp .env.example .env.local`), fill it in, **restart** `npm run dev` (env files are read at start). |
-| "The database rejected the login" | The password in `DATABASE_URL` differs from `POSTGRES_PASSWORD` in `.env`. Make them equal. If you changed it after the first `docker compose up`: `docker compose down -v`, then `docker compose up -d`, `npm run db:migrate`. |
-| `npm run db:migrate` says "older version of the SQL files" | The database was created by an earlier version. `npm run db:reset` then `npm run db:seed` (deletes the demo data). |
+| "The database rejected the login" | The password in `DATABASE_URL` differs from `POSTGRES_PASSWORD` in `.env`. Make them equal. If you changed it after the first `docker compose up`, update the PostgreSQL role password safely in `psql`; do not delete the database volume. |
+| `npm run db:migrate` says "older version of the SQL files" | The database was created by an earlier version. Back it up with `pg_dump` first. Only a throw-away demo database may be rebuilt: `npm run db:reset -- --confirm=<database name>` then `npm run db:seed` (deletes all data). |
 | Department dropdown says "Could not load departments" | Same as the first row; press "Try again" after fixing. |
 | Register shows "Internal server error" and the page still has a *Campus* field | You are running an older or edited copy of the project (the current register page has no Campus field). Use a clean copy: see "Clean restart" below. |
 | Department list says "Select campus first..." | Normal: choose the campus first. If the campus list is empty, the database has no campuses: `npm run doctor`. |
@@ -373,15 +380,11 @@ thriftflip/
 
 ### Clean restart (fixes mixed old/new copies and old databases)
 ```bash
-# 1. in the OLD project folder: stop it and delete its database volume
-docker compose down -v
-# 2. unzip THRIFTFLIP_FINAL.zip into a NEW empty folder and go into it (do not copy files over the old folder)
-cd thriftflip
-cp .env.example .env.local && cp .env.example .env     # then edit both (same password; SESSION_SECRET 32+ characters)
-rm -rf node_modules .next && npm install
-docker compose up -d
+# 1. Make a separate copy of the source folder; do not delete or reset the existing database volume.
+# 2. Keep the existing .env / .env.local values and DATABASE_URL pointed at the current database.
+# 3. Install dependencies in the copied source folder, then run migrations (additive migrations preserve data).
+npm install
 npm run db:migrate
-npm run db:seed
 npm run doctor        # every line must say OK
 npm run dev           # restart it after every change of .env.local
 ```
@@ -395,7 +398,7 @@ If an error remains, copy the **first red line** printed after `POST /api/auth/r
 - **Department change rule** (semesters 1 and 2 only) and **semester only upward** are my interpretation of "update where appropriate".
 - **Search by department / semester / course code** works through the book's course. A book listed without a course code still appears in search by title, author and ISBN, but not in department/semester filters.
 - **Images live in PostgreSQL**, which is simple and backed up with the data, but large. For many users move them to file or object storage. Any logged-in user who knows an image id can view it.
-- **Schema changed in place.** If you ran an earlier version, run `npm run db:reset` and `npm run db:seed` (this deletes the old demo data).
+- **Schema changed in place.** If you ran an earlier version, back it up with `pg_dump` and use `npm run db:migrate`. Only a throw-away demo database may be rebuilt with `npm run db:reset -- --confirm=<database name>` and `npm run db:seed` (this deletes all data).
 - Not built: e-mail change, "remember me", admin screens for courses and e-mail domains, rate limiting of password-reset e-mails.
 
 ## 29. Future enhancements
