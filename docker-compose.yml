@@ -1,0 +1,20 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: thriftflip-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-thriftflip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-thriftflip}
+    ports:
+      - "5433:5432"
+    volumes:
+      - thriftflip_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-thriftflip} -d ${POSTGRES_DB:-thriftflip}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  thriftflip_pgdata:

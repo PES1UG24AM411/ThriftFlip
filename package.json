@@ -1,0 +1,51 @@
+{
+  "name": "thriftflip",
+  "version": "1.0.0",
+  "private": true,
+  "description": "THRIFTFLIP: student-to-student campus marketplace (Next.js + PostgreSQL + pgvector)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:reset": "tsx scripts/migrate.ts --reset",
+    "db:seed": "tsx scripts/seed.ts",
+    "admin:create": "tsx scripts/create_admin.ts",
+    "embeddings:generate": "tsx scripts/generate_embeddings.ts",
+    "docs:generate": "python3 scripts/gen_docs.py",
+    "test": "vitest run",
+    "doctor": "tsx scripts/doctor.ts"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "jose": "^5.9.3",
+    "next": "14.2.15",
+    "nodemailer": "^6.9.15",
+    "pg": "^8.13.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.16.10",
+    "@types/nodemailer": "^6.4.16",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  },
+  "allowScripts": {
+    "sharp@0.32.6": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true
+  }
+}
