@@ -268,7 +268,15 @@ Open **http://localhost:3000**.
 A newly registered account can use the marketplace immediately (no verification link).
 Demo logins (local only): `aarav.sharma@thriftflip.test` / `Demo@12345` (any seeded student: `<firstname>.<lastname>@thriftflip.test`), admin `admin@thriftflip.test` / `Admin@12345`.
 
-**Database role-based access control (RBAC):** see [`DB_RBAC_SETUP.md`](DB_RBAC_SETUP.md). Migration `022_database_rbac.sql` adds separate non-superuser student/admin/auth roles and row-level policies for student-owned records. Keep `DATABASE_URL` for migrations; after completing the setup guide, use `APP_DATABASE_URL` for the Next.js app.
+**Database role-based access control (RBAC):** Migration `022_database_rbac.sql` introduces separate PostgreSQL roles for students, administrators and authentication. The application connects through the non-superuser `thriftflip_app` login and selects the appropriate role for each request.
+
+- `thriftflip_student`: restricted student permissions.
+- `thriftflip_admin`: administrative database permissions.
+- `thriftflip_auth`: limited permissions for registration and authentication.
+- Row-level security (RLS): restricts access to student-owned wishlist, recently viewed, search activity, wanted-book, report and admin-message records.
+- Security-definer functions protect sensitive authentication-token operations.
+
+See [`DB_RBAC_SETUP.md`](DB_RBAC_SETUP.md) before configuring the application login. Keep `DATABASE_URL` for migrations and maintenance; use `APP_DATABASE_URL` for the application after setup.
 
 **Creating an admin** (the only way; students can never become admins): `npm run admin:create -- "Full Name" admin@example.com "a-strong-password"`. Running it again for the same e-mail resets that admin's name and password. Admins have only a name, e-mail and password, and all admins have the same full permissions.
 
@@ -403,7 +411,7 @@ If an error remains, copy the **first red line** printed after `POST /api/auth/r
 
 ## 29. Future enhancements
 Real payment gateway/escrow · e-mail and push notifications · scheduled jobs (pg_cron) for auction closing and waitlist expiry · image upload · rate limiting ·
-CSRF tokens · hybrid ranking (full-text + vector) · bid-risk thresholds tuned from data (or a learned model) · WebSocket live bidding · SSO with the university if officially offered · Row-level security policies.
+CSRF tokens · hybrid ranking (full-text + vector) · bid-risk thresholds tuned from data (or a learned model) · WebSocket live bidding · SSO with the university if officially offered · extend RLS coverage to additional student-owned tables.
 
 ## User interface (cream and dark brown design)
 
